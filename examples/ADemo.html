@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>three.js 3D建模 demo</title>
+    <style>
+        body {
+            background:#777;
+            padding:0;
+            margin:0;
+            font-weight: bold;
+            overflow:hidden;
+        }
+
+        #info {
+            position: absolute;
+            top: 0px;
+            width: 100%;
+            padding: 5px;
+            font-family:Monospace;
+            font-size:13px;
+            text-align:center;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <strong>3D建模Demo:</strong>
+        <strong>1, 放大/缩小</strong>
+        <strong>2, 可添加方块, 添加后高亮闪烁</strong>
+        <strong>3, 选择方块时高亮, 点击后闪烁</strong>
+        <strong>4, 沿路径漫游</strong>
+        <strong>5, 点击显示ID</strong>
+    </div>
+    <script src="../build/three.js"></script>
+
+    <script src="js/WebGL.js"></script>
+    <script src="js/loaders/GLTFLoader.js"></script>
+    <script src="js/libs/dat.gui.min.js"></script>
+    <script src="js/controls/TrackballControls.js"></script>
+
+    <script>
+
+        let log = console.log;
+
+        if (WEBGL.isWebGLAvailable() === false) {
+
+            document.body.appendChild( WEBGL.getWebGLErrorMessage() );
+        }
+
+        let camera, controls, scene, renderer;
+        let clock = new THREE.Clock();
+
+        let rollOverGeo, rollOverMaterial, rollOverMesh;
+
+        let cubeGeo, cubeMaterial, cubeMesh;
+
+        let gridHelper;
+
+        let plane;
+
+        let raycaster, mouseCoordVec2;
+
+        let modelPath = './models/gltf/Bridge/modifiedLianXu.gltf';
+
+        let objects = [];
+        let intersects, intersect;
+
+        let isShiftDown = false;
+
+        let INTERSECTED, timeIntervalId;
+
+        init();
+        render();
+        window.onload = function () {
+            initDatGui();
+        };
+
+        function init() {
+            scene  = new THREE.Scene();
+            scene.background = new THREE.Color( 0xf0f0f0 );
+
+            camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 10000 );
+            camera.position.set( 500, 800, 1300 );
+            camera.lookAt( 0, 0, 0 );
+
+            controls = new THREE.TrackballControls( camera );
+
+            controls.rotateSpeed = 1.0;
+            controls.zoomSpeed = 1.2;
+            controls.panSpeed = 0.8;
+
+            controls.noZoom = false;
+            controls.noPan = false;
+            controls.staticMoving = true;
+            controls.dynamicDampingFactor = 0.3;
+            // controls.keys = [ 65, 83, 68 ];
+            // controls.addEventListener( 'change', render );
+            //
+            // roll-over helpers
+
+            rollOverGeo = new THREE.BoxBufferGeometry( 50, 50, 50 );
+            rollOverMaterial = new THREE.MeshBasicMaterial( {
+                color: 0xff0000,
+                opacity: 0.8,
+                transparent: true,
+            } );
+            rollOverMesh = new THREE.Mesh( rollOverGeo, rollOverMaterial );
+            rollOverMesh.position.x = 0;
+            rollOverMesh.position.y = 0;
+            rollOverMesh.position.z = 0;
+
+            scene.add( rollOverMesh );
+
+            // Cubes
+            cubeGeo = new THREE.BoxBufferGeometry( 50, 50, 50 );
+            cubeMaterial = new THREE.MeshLambertMaterial( {
+                color: 0x75ddc1,
+                opacity: 1,
+            } );
+            cubeMesh = new THREE.Mesh( cubeGeo, cubeMaterial );
+            // cubeMesh.position.x = 60;
+            // cubeMesh.position.y = 60;
+            // cubeMesh.position.z = 0;
+            // scene.add( cubeMesh );
+
+            // Grid
+
+            gridHelper = new THREE.GridHelper(1000, 20);
+            scene.add(gridHelper);
+
+            // Raycaster
+
+            raycaster = new THREE.Raycaster();
+            mouseCoordVec2 = new THREE.Vector2();
+
+            // Plane
+            let geometry = new THREE.PlaneBufferGeometry( 1000, 1000 );
+            geometry.rotateX( - Math.PI / 2 );
+
+            plane = new THREE.Mesh( geometry, new THREE.MeshBasicMaterial( {
+                visible: false,
+                // color: 0xff0000,
+            } ) );
+            plane.position.y = 0;
+            scene.add( plane );
+
+            objects.push( plane );
+
+            // Axix
+
+            let axis = new THREE.AxesHelper(1000);
+            scene.add(axis);
+
+            // lights
+            // TODO 最后再看
+
+            var ambientLight = new THREE.AmbientLight( 0x606060 );
+            scene.add( ambientLight );
+
+            var directionalLight = new THREE.DirectionalLight( 0xffffff );
+            directionalLight.position.set( 1, 0.75, 0.5 ).normalize();
+            scene.add( directionalLight );
+
+            // GLTF Model
+            let loader = new THREE.GLTFLoader();
+            loader.load( modelPath, function ( gltf ) {
+                var localScale = 1;
+                gltf.scene.scale.set(localScale, localScale, localScale);
+                gltf.scene.traverse( processGLTFChild );
+
+                scene.add( gltf.scene );
+
+            }, undefined, function ( e ) {
+
+                console.error( e );
+
+            } );
+
+            renderer = new THREE.WebGLRenderer( { antialias: true } );
+            renderer.setPixelRatio( window.devicePixelRatio );
+            renderer.setSize( window.innerWidth, window.innerHeight );
+            document.body.appendChild( renderer.domElement );
+
+            bindEvent();
+
+        }
+
+        //
+        function render() {
+            let delta = clock.getDelta();
+            controls.update( delta );
+            requestAnimationFrame(render);
+
+            renderer.render( scene, camera );
+        }
+
+        function onDocumentMouseMove( event ) {
+            event.preventDefault();
+            // log('onDocumentMouseKeyMove')
+            // log('onDocumentMouseKeyMove event.clientX:', event.clientX);
+            // log('onDocumentMouseKeyMove event.clientY', event.clientY);
+            // log('onDocumentMouseKeyMove window.innerWidth:', window.innerWidth );
+            // log('onDocumentMouseKeyMove window.innerHeight:', window.innerHeight );
+            let normalizedX = (event.clientX / window.innerWidth - 0.5) * 2;
+            let normalizedY = ( - event.clientY / window.innerHeight + 0.5) * 2;
+            mouseCoordVec2.set( normalizedX, normalizedY );
+            // mouseCoordVec2.set( ( event.clientX / window.innerWidth ) * 2 - 1, - ( event.clientY / window.innerHeight ) * 2 + 1 );
+            // TODO 为何这里要转换下坐标 为什么 setFromCamera
+            raycaster.setFromCamera( mouseCoordVec2, camera );
+
+            intersects = raycaster.intersectObjects( objects )
+
+            if ( intersects.length > 0) {
+                if ( rollOverMesh.visible === false ) rollOverMesh.visible = true;
+
+                if ( INTERSECTED !== intersects[0].object ) {
+                    // log('**DEBUG intersects:', intersects)
+
+
+                    // log('intersect:', intersect)
+                    INTERSECTED = intersects[0].object;
+                    intersect = intersects[0];
+
+                }
+
+
+            }
+
+            render();
+        }
+
+        function onDocumentMouseDown( event ) {
+            event.preventDefault();
+            mouseCoordVec2.set(
+                ( event.clientX / window.innerWidth - 0.5 ) * 2,
+                ( - event.clientY / window.innerHeight + 0.5 ) * 2
+            );
+            raycaster.setFromCamera( mouseCoordVec2, camera );
+
+            intersects = raycaster.intersectObjects( objects );
+
+            if ( intersects.length > 0 ) {
+                intersect = intersects[0];
+
+                // add cube
+
+                if (!isShiftDown) {
+                    let newCube = new THREE.Mesh( cubeGeo, cubeMaterial );
+                    newCube.position.copy( rollOverMesh.position );
+                    scene.add( newCube );
+
+                    objects.push(newCube);
+
+                } else {
+                    // delete cube
+                    if ( intersect.object !== plane ) {
+
+                        scene.remove( intersect.object );
+
+                        objects.splice( objects.indexOf( intersect.object), 1 )
+                    }
+
+                }
+
+                render();
+
+            }
+        }
+
+        function onDocumentKeyDown( event ) {
+            event.preventDefault();
+            switch (event.keyCode) {
+                case 16: isShiftDown = true; break;
+            }
+        }
+
+        function onDocumentKeyUp( event ) {
+            event.preventDefault();
+            switch (event.keyCode) {
+                case 16: isShiftDown = false; break;
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+
+        }
+
+        function isBoxMesh(mesh) {
+            if (mesh) {
+                return mesh.geometry.type === 'BoxBufferGeometry'
+            } else {
+                return false
+            }
+        }
+
+        let FizzyText = function () {
+            this.message  = 'dat.gui';
+            this.addCube = function () {
+                window.alert('click add Cube!');
+            };
+        };
+
+        function initDatGui() {
+            let text = new FizzyText();
+            let gui = new dat.GUI();
+            gui.add(text, 'message');
+            gui.add(text, 'addCube');
+        }
+
+        function processGLTFChild( child ) {
+            try{
+                if (child.isMesh ) {
+                    console.log('child:', child)
+                    if (JSON.stringify(child.userData) === '{}') {
+                        // console.log('child.userData is {}:', child)
+                        child.userData.id = child.uuid
+                    }
+                    console.log('child.userData.id:', child.userData.id)
+
+                    if (child.material && child.material[0]) {
+                        let num = Math.random() * 0xffffff;
+                        child.material[0].color.setHex( num * 0xffffff );
+                    }
+                    if (child.material && child.material.color) {
+                        let num = Math.random() * 0xffffff;
+                        child.material.color.setHex( num * 0xffffff );
+                    }
+                }
+            } catch (e) {
+                console.log('error:', e)
+                console.error('设置色彩出错, child:', child)
+            }
+        }
+
+        function bindEvent() {
+            window.addEventListener('resize', onWindowResize);
+
+            document.addEventListener( 'mousemove', onDocumentMouseMove, false );
+            document.addEventListener( 'mousedown', onDocumentMouseDown, false );
+            document.addEventListener( 'keydown', onDocumentKeyDown, false );
+            document.addEventListener( 'keyup', onDocumentKeyUp, false );
+        }
+    </script>
+</body>
+</html>

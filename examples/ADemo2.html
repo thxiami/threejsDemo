@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <style>
+        body {
+            font-family: Monospace;
+            background-color: #f0f0f0;
+            margin: 0px;
+            overflow: hidden;
+        }
+
+        #info {
+            position: absolute;
+            top: 0px;
+            width: 100%;
+            padding: 5px;
+            font-family:Monospace;
+            font-size:13px;
+            text-align:center;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="container"></div>
+    <div id="info"><a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - geometry - spline extrusion examples by <a href="http://www.lab4games.net/zz85/blog" target="_blank" rel="noopener">zz85</a></div>
+
+    <script src="../build/three.js"></script>
+    <script src="js/controls/OrbitControls.js"></script>
+    <script src="js/loaders/GLTFLoader.js"></script>
+
+    <!-- where curves formulas are defined -->
+
+    <script src="js/CurveExtras.js"></script>
+
+    <script src="js/libs/stats.min.js"></script>
+    <script src="js/libs/dat.gui.min.js"></script>
+
+    <script>
+        let container, stats, gui;
+
+        let camera, scene, renderer, splineCamera, cameraHelper, cameraEye, controls;
+
+        let axis;
+
+        let testSpline = new THREE.CatmullRomCurve3( [
+            new THREE.Vector3( 100, 25, -100 ),
+            new THREE.Vector3( -100, 25, -100 ),
+            new THREE.Vector3 ( -100, 25, 100 ),
+            new THREE.Vector3( 100, 25, 100 ),
+        ] );
+
+        let testSpline2 = new THREE.CatmullRomCurve3( [
+            new THREE.Vector3( 100, 25, -100 ),
+            new THREE.Vector3( -100, 25, -100 ),
+            new THREE.Vector3 ( -100, 25, 100 ),
+            new THREE.Vector3( 100, 25, 100 ),
+        ] );
+
+        let splines = {
+            TestSpline: testSpline,
+            // TestSpline2: testSpline2,
+            GrannyKnot: new THREE.Curves.GrannyKnot(),
+            HeartCurve: new THREE.Curves.HeartCurve( 3.5 ),
+            VivianiCurve: new THREE.Curves.VivianiCurve( 70 ),
+        };
+        let modelPath = './models/gltf/Bridge/modifiedLianXu.gltf';
+
+        let parent, tubeGeo, mesh;
+
+        let cubeGeo, cubeMaterial, cubeMesh;
+
+        let raycaster, mouseCoordVec2, objects = [], INTERSECTED;
+
+        let mode = {
+            view: onDocumentMouseMove,
+            edit: onDocumentMouseMoveEditMode,
+        };
+
+        let params = {
+            spline: 'TestSpline',
+            scale: 4,
+            extrusionSegments: 100,
+            radiusSegments: 3,
+            closed: true,
+            animationView: false,
+            lookAhead: false,
+            cameraHelper: false,
+            pathVisible: true,
+            cubeVisible: true,
+            axisVisible: true,
+            mode: 'view',
+        };
+
+        let tubeMaterial = new THREE.MeshLambertMaterial( { color: 0xff00ff } );
+
+        let wireframeMaterial = new THREE.MeshBasicMaterial( {
+            color: 0x000000,
+            opacity: 0.3,
+            wireframe: true,
+            transparent: true,
+        } );
+
+        function addTube() {
+            removeTube();
+
+            tubeGeo = new THREE.TubeBufferGeometry( splines[ params.spline ] , 100, 2, 3,  params.closed );
+
+            // Add geometry
+            mesh = new THREE.Mesh( tubeGeo, tubeMaterial );
+            mesh.visible = params.pathVisible;
+
+            let wireframe = new THREE.Mesh( tubeGeo, wireframeMaterial );
+            mesh.add( wireframe );
+
+            parent.add( mesh );
+
+            // set scale
+            mesh.scale.set( params.scale, params.scale, params.scale );
+        }
+
+        function addTubeCamera() {
+
+            splineCamera = new THREE.PerspectiveCamera(84, window.innerWidth / window.innerHeight, 10, 1000 );
+            parent.add( splineCamera ); // TODO 为何这里是 parent.add  不是 scene.add
+
+            cameraHelper = new THREE.CameraHelper( splineCamera );
+            cameraHelper.visible = params.cameraHelper;
+
+            scene.add( cameraHelper );
+        }
+
+        function animateCamera() {
+
+            cameraHelper.visible = params.cameraHelper;
+
+        }
+
+        function removeTube() {
+            if ( mesh !== undefined ) {
+                parent.remove( mesh );
+                mesh.geometry.dispose();
+            }
+        }
+
+        function addCube() {
+            // Cubes
+            if ( cubeMesh !== undefined ) {
+                parent.remove( cubeMesh );
+                cubeMesh.geometry.dispose();
+            }
+
+            cubeGeo = new THREE.BoxBufferGeometry( 50, 50, 50 );
+            cubeMaterial = new THREE.MeshLambertMaterial( {
+                color: 0x75ddc1,
+                opacity: 1,
+            } );
+            cubeMesh = new THREE.Mesh( cubeGeo, cubeMaterial );
+            cubeMesh.position.x = 0;
+            cubeMesh.position.y = 0;
+            cubeMesh.position.z = 0;
+            cubeMesh.visible = params.cubeVisible;
+
+            parent.add( cubeMesh );
+        }
+
+        function addGLTFModel() {
+            let loader = new THREE.GLTFLoader();
+            loader.load( modelPath, function ( gltf ) {
+                let gltfModelScale = 5;
+                gltf.scene.scale.set(gltfModelScale, gltfModelScale, gltfModelScale);
+                gltf.scene.traverse( processGLTFChild );
+
+                scene.add( gltf.scene );
+
+            }, undefined, function ( e ) {
+
+                console.error( e );
+
+            } );
+        }
+        function init() {
+            container = document.getElementById( 'container' );
+
+            // camera
+
+            camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.01, 10000 );
+            camera.position.set( 100, 100, 500 );
+
+            // scene
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color( 0xf0f0f0 );
+
+            // light
+
+            let light = new THREE.DirectionalLight( 0xffffff );
+            light.position.set( 0, 0, 50);
+            scene.add(light);
+
+            let ambientLight = new THREE.AmbientLight( 0x606060 );
+            scene.add( ambientLight );
+
+            // Axis
+
+            axis = new THREE.AxesHelper(1000);
+            axis.visible = params.axisVisible;
+            scene.add(axis);
+
+            // Raycaster
+
+            raycaster = new THREE.Raycaster();
+            mouseCoordVec2 = new THREE.Vector2();
+
+            // tube
+
+            parent = new THREE.Object3D();
+            scene.add( parent );
+
+            addTube();
+
+            addTubeCamera();
+
+            addCube();
+
+            addGLTFModel();
+
+
+            // renderer
+
+            renderer = new THREE.WebGLRenderer( { antialias: true } );
+            renderer.setPixelRatio( window.devicePixelRatio );
+            renderer.setSize( window.innerWidth, window.innerHeight );
+            container.appendChild( renderer.domElement );
+
+            // camera fly
+
+            controls = new THREE.OrbitControls( camera, renderer.domElement );
+
+            // stats
+
+            stats = new Stats();
+            container.appendChild( stats.dom );
+
+            // dat.GUI
+
+            addGUI();
+
+            // bindEvent
+
+            bindEvent();
+        }
+
+        function animate() {
+
+            requestAnimationFrame( animate );
+
+            render();
+            stats.update();
+
+        }
+
+        function render() {
+            moveCameraAlongPath();
+            renderer.render( scene, params.animationView === true ? splineCamera : camera );
+        }
+
+        function moveCameraAlongPath() {
+            let time = Date.now();
+            let looptime = 20 * 500;
+            let t = ( time % looptime ) / looptime;
+            // console.log('DEV t:', t);
+            // camera.position.x  = 100 - t * 100;
+            // camera.position.y  = 100 - t * 100;
+            // camera.position.z  = 500 - t * 500;
+
+            var pos = tubeGeo.parameters.path.getPointAt( t );
+            pos.multiplyScalar( params.scale );
+            // console.log('pos:', pos)
+            splineCamera.position.copy( pos );
+            // camera.position.z -= 50;
+            splineCamera.lookAt( cubeMesh.position );
+
+        }
+
+
+
+        function bindEvent() {
+
+            window.addEventListener( 'resize', onWindowResize, false );
+            document.addEventListener( 'mousemove', mode[ params.mode ], false );
+            document.addEventListener( 'mousedown', onDocumentMouseDown, false );
+
+        }
+
+        function onDocumentMouseMove( event ) {
+            event.preventDefault();
+
+            let normalizedX = (event.clientX / window.innerWidth - 0.5) * 2;
+            let normalizedY = ( - event.clientY / window.innerHeight + 0.5) * 2;
+            mouseCoordVec2.set( normalizedX, normalizedY );
+            // TODO 为何这里要转换下坐标 为什么 setFromCamera
+            raycaster.setFromCamera( mouseCoordVec2, camera );
+
+            intersects = raycaster.intersectObjects( objects )
+
+            if ( intersects.length > 0) {
+                if ( INTERSECTED !== intersects[0].object ) {
+                    if ( INTERSECTED ) INTERSECTED.material.emissive.setHex( INTERSECTED.currentHex );
+
+                    INTERSECTED = intersects[0].object;
+                    console.log('INTERSECTED id:', INTERSECTED.userData.id);
+                    INTERSECTED.currentHex = INTERSECTED.material[0].emissive.getHex();
+
+                    INTERSECTED.material[0].emissive.setHex( 0x75ddc1 );
+                }
+            } else {
+                // 恢复颜色
+                if (INTERSECTED) {
+                    INTERSECTED.material[0].emissive.setHex( INTERSECTED.currentHex );
+                }
+                INTERSECTED = null;
+            }
+
+            render();
+        }
+
+        function onDocumentMouseMoveEditMode( event ) {
+            event.preventDefault();
+            //
+            // let normalizedX = (event.clientX / window.innerWidth - 0.5) * 2;
+            // let normalizedY = ( - event.clientY / window.innerHeight + 0.5) * 2;
+            // mouseCoordVec2.set( normalizedX, normalizedY );
+            // // TODO 为何这里要转换下坐标 为什么 setFromCamera
+            // raycaster.setFromCamera( mouseCoordVec2, camera );
+            //
+            // intersects = raycaster.intersectObjects( objects )
+            //
+            // if ( intersects.length > 0) {
+            //     if ( INTERSECTED !== intersects[0].object ) {
+            //         if ( INTERSECTED ) INTERSECTED.material.emissive.setHex( INTERSECTED.currentHex );
+            //
+            //         INTERSECTED = intersects[0].object;
+            //         console.log('INTERSECTED id:', INTERSECTED.userData.id);
+            //         INTERSECTED.currentHex = INTERSECTED.material[0].emissive.getHex();
+            //
+            //         INTERSECTED.material[0].emissive.setHex( 0x75ddc1 );
+            //     }
+            // } else {
+            //     // 恢复颜色
+            //     if (INTERSECTED) {
+            //         INTERSECTED.material[0].emissive.setHex( INTERSECTED.currentHex );
+            //     }
+            //     INTERSECTED = null;
+            // }
+            //
+            // render();
+        }
+
+
+        function onDocumentMouseDown( event ) {
+
+                render();
+        }
+
+
+        function onWindowResize() {
+
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+
+            renderer.setSize( window.innerWidth, window.innerHeight );
+
+        }
+
+        function main() {
+            init();
+            animate();
+        }
+
+        function addGUI() {
+            gui = new dat.GUI( { width: 300 } );
+
+            let folderGeometry = gui.addFolder( '几何尺寸' );
+            folderGeometry.add ( params, 'spline', Object.keys( splines ) ).onChange( function () {
+
+                addTube();
+
+            });
+
+            folderGeometry.add( params, 'closed' ).onChange( function () {
+
+                addTube();
+
+            } );
+
+            folderGeometry.open();
+
+            let folderCamera = gui.addFolder( '镜头' );
+            folderCamera.add( params, 'animationView' ).onChange( function () {
+
+                animateCamera();
+
+            } );
+            folderCamera.add( params, 'cameraHelper' ).onChange( function () {
+
+                animateCamera();
+
+            } );
+
+            folderCamera.open();
+
+            let folderEdit = gui.addFolder( '编辑' );
+
+            folderEdit.add( params, 'pathVisible' ).onChange( function () {
+
+                addTube();
+
+            } );
+
+            folderEdit.add( params, 'cubeVisible' ).onChange( function () {
+
+                addCube();
+
+            } );
+
+            folderEdit.add( params, 'axisVisible' ).onChange( function () {
+
+                axis.visible = params.axisVisible;
+
+            } );
+            // folderEdit.add ( params, 'mode', Object.keys( mode ) ).onChange( function () {
+            //
+            //     bindEvent();
+            //
+            // });
+            folderEdit.open();
+        }
+
+
+        function processGLTFChild( child ) {
+            try{
+                if (child.isMesh ) {
+                    console.log('child:', child)
+                    if (JSON.stringify(child.userData) === '{}') {
+                        // console.log('child.userData is {}:', child)
+                        child.userData.id = child.uuid
+                    }
+                    objects.push( child )
+                    console.log('child.userData.id:', child.userData.id)
+
+                    if (child.material && child.material[0]) {
+                        let num = Math.random() * 0xffffff;
+                        child.material[0].color.setHex( num * 0xffffff );
+                    }
+                    if (child.material && child.material.color) {
+                        let num = Math.random() * 0xffffff;
+                        child.material.color.setHex( num * 0xffffff );
+                    }
+                }
+            } catch (e) {
+                console.log('error:', e)
+                console.error('设置色彩出错, child:', child)
+            }
+        }
+
+
+        main();
+
+    </script>
+</body>
+</html>

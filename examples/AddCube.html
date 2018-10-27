@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>three.js webgl - interactive - voxel painter</title>
+    <style>
+        body {
+            background:#777;
+            padding:0;
+            margin:0;
+            font-weight: bold;
+            overflow:hidden;
+        }
+
+        #info {
+            position: absolute;
+            top: 0px;
+            width: 100%;
+            padding: 5px;
+            font-family:Monospace;
+            font-size:13px;
+            text-align:center;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - voxel painter - webgl<br>
+        <strong>click</strong>: add voxel, <strong>shift + click</strong>: remove voxel
+    </div>
+    <script src="../build/three.js"></script>
+
+    <script src="js/WebGL.js"></script>
+
+    <script>
+        let log = console.log;
+
+        if (WEBGL.isWebGLAvailable() === false) {
+
+            document.body.appendChild( WEBGL.getWebGLErrorMessage() );
+        }
+
+        let camera, scene, renderer;
+
+        let rollOverGeo, rollOverMaterial, rollOverMesh;
+
+        let cubeGeo, cubeMaterial, cubeMesh;
+
+        let gridHelper;
+
+        let plane;
+
+        let raycaster, mouseCoordVec2;
+
+        let objects = [];
+        let intersects, intersect;
+
+        let isShiftDown = false;
+
+        let INTERSECTED, timeIntervalId;
+
+        init();
+        render();
+
+        function init() {
+            scene  = new THREE.Scene();
+            scene.background = new THREE.Color( 0xf0f0f0 );
+
+            camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 10000 );
+            camera.position.set( 500, 800, 1300 );
+            // camera.position.set( 0, 800, 0 );
+            camera.lookAt( 0, 0, 0 );
+            log('0 camera:', camera)
+
+            camera.position.set( 500, 800, 1300 );
+
+
+            // roll-over helpers
+
+            rollOverGeo = new THREE.BoxBufferGeometry( 50, 50, 50 );
+            rollOverMaterial = new THREE.MeshBasicMaterial( {
+                color: 0xff0000,
+                opacity: 0.8,
+                transparent: true,
+            } );
+            rollOverMesh = new THREE.Mesh( rollOverGeo, rollOverMaterial );
+            rollOverMesh.position.x = 0;
+            rollOverMesh.position.y = 0;
+            rollOverMesh.position.z = 0;
+
+            scene.add( rollOverMesh );
+
+            // Cubes
+            cubeGeo = new THREE.BoxBufferGeometry( 50, 50, 50 );
+            cubeMaterial = new THREE.MeshLambertMaterial( {
+                color: 0x75ddc1,
+                opacity: 1,
+            } );
+            cubeMesh = new THREE.Mesh( cubeGeo, cubeMaterial );
+            // cubeMesh.position.x = 60;
+            // cubeMesh.position.y = 60;
+            // cubeMesh.position.z = 0;
+            // scene.add( cubeMesh );
+
+            // Grid
+
+            gridHelper = new THREE.GridHelper(1000, 20);
+            scene.add(gridHelper);
+
+            // Raycaster
+
+            raycaster = new THREE.Raycaster();
+            mouseCoordVec2 = new THREE.Vector2();
+
+            // Plane
+            let geometry = new THREE.PlaneBufferGeometry( 1000, 1000 );
+            geometry.rotateX( - Math.PI / 2 );
+
+            plane = new THREE.Mesh( geometry, new THREE.MeshBasicMaterial( {
+                visible: false,
+                // color: 0xff0000,
+            } ) );
+            plane.position.y = 0;
+            scene.add( plane );
+
+            objects.push( plane );
+
+            // Axix
+
+            let axis = new THREE.AxesHelper(1000);
+            scene.add(axis);
+
+            // lights
+            // TODO 最后再看
+
+            var ambientLight = new THREE.AmbientLight( 0x606060 );
+            scene.add( ambientLight );
+
+            var directionalLight = new THREE.DirectionalLight( 0xffffff );
+            directionalLight.position.set( 1, 0.75, 0.5 ).normalize();
+            scene.add( directionalLight );
+
+            renderer = new THREE.WebGLRenderer( { antialias: true } );
+            renderer.setPixelRatio( window.devicePixelRatio );
+            renderer.setSize( window.innerWidth, window.innerHeight );
+            document.body.appendChild( renderer.domElement );
+
+            window.addEventListener('resize', onWindowResize);
+
+            document.addEventListener( 'mousemove', onDocumentMouseMove, false );
+            document.addEventListener( 'mousedown', onDocumentMouseDown, false );
+            document.addEventListener( 'keydown', onDocumentKeyDown, false );
+            document.addEventListener( 'keyup', onDocumentKeyUp, false );
+
+        }
+
+        // function init() {
+        //
+        //     camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 10000 );
+        //     camera.position.set( 500, 800, 1300 );
+        //     camera.lookAt( 0, 0, 0 );
+        //
+        //     scene = new THREE.Scene();
+        //     scene.background = new THREE.Color( 0xf0f0f0 );
+        //
+        //     // roll-over helpers
+        //
+        //     var rollOverGeo = new THREE.BoxBufferGeometry( 50, 50, 50 );
+        //     // rollOverMaterial = new THREE.MeshBasicMaterial( { color: 0xff0000, opacity: 0.5, transparent: true } );
+        //     rollOverMaterial = new THREE.MeshBasicMaterial( { color: 0xff0000, opacity: 0.8, transparent: true } );
+        //     rollOverMesh = new THREE.Mesh( rollOverGeo, rollOverMaterial );
+        //     scene.add( rollOverMesh );
+        //
+        //     // cubes
+        //
+        //     cubeGeo = new THREE.BoxBufferGeometry( 50, 50, 50 );
+        //     // cubeMaterial = new THREE.MeshLambertMaterial( { color: 0xfeb74c, map: new THREE.TextureLoader().load( 'textures/square-outline-textured.png' ) } );
+        //     // TODO 查看 API map 的作用
+        //     cubeMaterial = new THREE.MeshLambertMaterial( { color: 0x75ddc1, map: new THREE.TextureLoader().load( 'textures/square-outline-textured.png' ) } );
+        //
+        //     // grid
+        //
+        //     var gridHelper = new THREE.GridHelper( 1000, 20 );
+        //     scene.add( gridHelper );
+        //
+        //     //
+        //
+        //     raycaster = new THREE.Raycaster();
+        //     mouse = new THREE.Vector2();
+        //
+        //     var geometry = new THREE.PlaneBufferGeometry( 1000, 1000 );
+        //     geometry.rotateX( - Math.PI / 2 );
+        //
+        //     plane = new THREE.Mesh( geometry, new THREE.MeshBasicMaterial( { visible: false } ) );
+        //     scene.add( plane );
+        //
+        //     objects.push( plane );
+        //
+        //     // lights
+        //
+        //     var ambientLight = new THREE.AmbientLight( 0x606060 );
+        //     scene.add( ambientLight );
+        //
+        //     var directionalLight = new THREE.DirectionalLight( 0xffffff );
+        //     directionalLight.position.set( 1, 0.75, 0.5 ).normalize();
+        //     scene.add( directionalLight );
+        //
+        //     renderer = new THREE.WebGLRenderer( { antialias: true } );
+        //     renderer.setPixelRatio( window.devicePixelRatio );
+        //     renderer.setSize( window.innerWidth, window.innerHeight );
+        //     document.body.appendChild( renderer.domElement );
+        //
+        //     document.addEventListener( 'mousemove', onDocumentMouseMove, false );
+        //     document.addEventListener( 'mousedown', onDocumentMouseDown, false );
+        //     document.addEventListener( 'keydown', onDocumentKeyDown, false );
+        //     document.addEventListener( 'keyup', onDocumentKeyUp, false );
+        //
+        //     //
+        //
+        //     window.addEventListener( 'resize', onWindowResize, false );
+        //
+        // }
+
+        //
+        function render() {
+
+            renderer.render( scene, camera );
+        }
+
+        function onDocumentMouseMove( event ) {
+            event.preventDefault();
+            // log('onDocumentMouseKeyMove')
+            // log('onDocumentMouseKeyMove event.clientX:', event.clientX);
+            // log('onDocumentMouseKeyMove event.clientY', event.clientY);
+            // log('onDocumentMouseKeyMove window.innerWidth:', window.innerWidth );
+            // log('onDocumentMouseKeyMove window.innerHeight:', window.innerHeight );
+            let normalizedX = (event.clientX / window.innerWidth - 0.5) * 2;
+            let normalizedY = ( - event.clientY / window.innerHeight + 0.5) * 2;
+            mouseCoordVec2.set( normalizedX, normalizedY );
+            // mouseCoordVec2.set( ( event.clientX / window.innerWidth ) * 2 - 1, - ( event.clientY / window.innerHeight ) * 2 + 1 );
+            // TODO 为何这里要转换下坐标 为什么 setFromCamera
+            raycaster.setFromCamera( mouseCoordVec2, camera );
+
+            intersects = raycaster.intersectObjects( objects )
+
+            if ( intersects.length > 0) {
+                if ( rollOverMesh.visible === false ) rollOverMesh.visible = true;
+
+                if ( INTERSECTED !== intersects[0].object ) {
+                    log('**DEBUG intersects:', intersects)
+
+
+                    // log('intersect:', intersect)
+                    INTERSECTED = intersects[0].object;
+                    intersect = intersects[0];
+
+                    if ( isBoxMesh( INTERSECTED ) ){
+                        // 隐藏 rollOverMesh
+                        rollOverMesh.visible = false;
+
+
+                        log('**DEBUG 0 timeIntervalId:', timeIntervalId);
+                        if ( timeIntervalId === undefined ) {
+                            timeIntervalId = window.setInterval(flash, 1000);
+                            log('**DEBUG 0 增加了 timeIntervalId:', timeIntervalId);
+                        }
+
+                        function flash() {
+                            window.setTimeout( highlight1, 0 );
+                            window.setTimeout( highlight2, 500 );
+                        }
+                        function highlight1() {
+                            if (INTERSECTED) {
+                                console.log('flash INTERSECTED.id :', INTERSECTED.id)
+
+                                INTERSECTED.material.emissive.setHex( 0x75ddc1 );
+                                render();
+                            }
+                        }
+                        function highlight2() {
+                            if (INTERSECTED) {
+                                INTERSECTED.material.emissive.setHex( 0xff0000 );
+                                render();
+                            }
+                        }
+                    } else {
+
+                        // TODO 设置成原来的颜色
+
+
+                        // 显示 rollOverMesh
+                        log('**DEBUG 1 timeIntervalId:', timeIntervalId)
+                        if ( timeIntervalId !== undefined ) {
+                            log('**DEBUG window.clearInterval, 删除了 timeIntervalId:', timeIntervalId)
+                            window.clearInterval( timeIntervalId );
+                            timeIntervalId = undefined;
+                        }
+                        INTERSECTED = null;
+                        // log('intersect.point:', intersect.point)
+                        // log('intersect.face.normal:', intersect.face.normal)
+                        // log('rollOverMesh.position.copy', rollOverMesh.position.copy( intersect.point ))
+                        // TODO 没有明白这里的 add 有什么作用 不知道 add 到哪里了
+                        rollOverMesh.position.copy( intersect.point ).add( intersect.face.normal );
+                        rollOverMesh.position.divideScalar(50).floor().multiplyScalar(50).addScalar(25);
+                    }
+                }
+
+
+            }
+
+            render();
+        }
+
+        function onDocumentMouseDown( event ) {
+            event.preventDefault();
+            mouseCoordVec2.set(
+                ( event.clientX / window.innerWidth - 0.5 ) * 2,
+                ( - event.clientY / window.innerHeight + 0.5 ) * 2
+            );
+            raycaster.setFromCamera( mouseCoordVec2, camera );
+
+            intersects = raycaster.intersectObjects( objects );
+
+            if ( intersects.length > 0 ) {
+                intersect = intersects[0];
+
+                // add cube
+
+                if (!isShiftDown) {
+                    let newCube = new THREE.Mesh( cubeGeo, cubeMaterial );
+                    newCube.position.copy( rollOverMesh.position );
+                    scene.add( newCube );
+
+                    objects.push(newCube);
+
+                } else {
+                    // delete cube
+                    if ( intersect.object !== plane ) {
+
+                        scene.remove( intersect.object );
+
+                        objects.splice( objects.indexOf( intersect.object), 1 )
+                    }
+
+                }
+
+                render();
+
+            }
+        }
+
+        function onDocumentKeyDown( event ) {
+            event.preventDefault();
+            switch (event.keyCode) {
+                case 16: isShiftDown = true; break;
+            }
+        }
+
+        function onDocumentKeyUp( event ) {
+            event.preventDefault();
+            switch (event.keyCode) {
+                case 16: isShiftDown = false; break;
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+        }
+
+        function isBoxMesh(mesh) {
+            if (mesh) {
+                return mesh.geometry.type === 'BoxBufferGeometry'
+            } else {
+                return false
+            }
+        }
+
+    </script>
+</body>
+</html>
