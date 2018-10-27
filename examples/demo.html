@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <style>
+        body {
+            font-family: Monospace;
+            background-color: #f0f0f0;
+            margin: 0px;
+            overflow: hidden;
+        }
+
+        #info {
+            position: absolute;
+            top: 0px;
+            width: 100%;
+            padding: 5px;
+            font-family:Monospace;
+            font-size:13px;
+            text-align:center;
+        }
+    </style>
+</head>
+<body>
+
+<div id="container"></div>
+<div id="info"><a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> Demo: 鼠标悬停高亮选中的桥梁部件 Author:<a href="https://github.com/thxiami" target="_blank" rel="noopener">thxiami</a></div>
+
+<script src="../build/three.js"></script>
+<script src="js/controls/OrbitControls.js"></script>
+<script src="js/loaders/GLTFLoader.js"></script>
+
+<script src="js/libs/stats.min.js"></script>
+
+<script>
+    let container, stats;
+
+    let camera, scene, renderer, controls;
+
+    let modelPath = './models/gltf/Bridge/modifiedLianXu.gltf';
+
+    let raycaster, mouseCoordVec2, objects = [], INTERSECTED;
+
+    function init() {
+        container = document.getElementById( 'container' );
+
+        // camera
+
+        camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.01, 10000 );
+        camera.position.set( 100, 100, 500 );
+
+        // scene
+
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color( 0xf0f0f0 );
+
+        // light
+
+        let light = new THREE.DirectionalLight( 0xffffff );
+        light.position.set( 0, 0, 50);
+        scene.add(light);
+
+        let ambientLight = new THREE.AmbientLight( 0x606060 );
+        scene.add( ambientLight );
+
+        // Raycaster
+
+        raycaster = new THREE.Raycaster();
+        mouseCoordVec2 = new THREE.Vector2();
+
+        // load gltf model
+
+        addGLTFModel();
+
+        // renderer
+
+        renderer = new THREE.WebGLRenderer( { antialias: true } );
+        renderer.setPixelRatio( window.devicePixelRatio );
+        renderer.setSize( window.innerWidth, window.innerHeight );
+        container.appendChild( renderer.domElement );
+
+        // camera fly
+
+        controls = new THREE.OrbitControls( camera, renderer.domElement );
+
+        // stats
+
+        stats = new Stats();
+        container.appendChild( stats.dom );
+
+        // bindEvent
+
+        bindEvent();
+    }
+
+    function addGLTFModel() {
+        let loader = new THREE.GLTFLoader();
+        loader.load( modelPath, function ( gltf ) {
+            let gltfModelScale = 5;
+            gltf.scene.scale.set(gltfModelScale, gltfModelScale, gltfModelScale);
+            gltf.scene.traverse( processGLTFChild );
+
+            scene.add( gltf.scene );
+
+        }, undefined, function ( e ) {
+
+            console.error( e );
+
+        } );
+    }
+
+    function processGLTFChild( child ) {
+        try{
+            if (child.isMesh ) {
+                console.log('child:', child)
+
+                objects.push( child )
+                // 有的child.material 类型是 Array, 有的是 Object
+                if (child.material && child.material[0]) {
+                    let num = Math.random() * 0xffffff;
+                    child.material[0].color.setHex( num * 0xffffff );
+                }
+                if (child.material && child.material.color) {
+                    let num = Math.random() * 0xffffff;
+                    child.material.color.setHex( num * 0xffffff );
+                }
+            }
+        } catch (e) {
+            console.log('error:', e)
+            console.error('设置色彩出错, child:', child)
+        }
+    }
+
+    function animate() {
+
+        requestAnimationFrame( animate );
+
+        render();
+        stats.update();
+
+    }
+
+    function render() {
+        renderer.render( scene, camera );
+    }
+
+    function bindEvent() {
+
+        window.addEventListener( 'resize', onWindowResize, false );
+        document.addEventListener( 'mousemove', onDocumentMouseMove, false );
+
+    }
+
+    function onDocumentMouseMove( event ) {
+        event.preventDefault();
+
+        let normalizedX = (event.clientX / window.innerWidth - 0.5) * 2;
+        let normalizedY = ( - event.clientY / window.innerHeight + 0.5) * 2;
+        mouseCoordVec2.set( normalizedX, normalizedY );
+        // TODO 为何这里要转换下坐标 为什么 setFromCamera
+        raycaster.setFromCamera( mouseCoordVec2, camera );
+
+        intersects = raycaster.intersectObjects( objects )
+
+        if ( intersects.length > 0) {
+            if ( INTERSECTED !== intersects[0].object ) {
+                if ( INTERSECTED ) INTERSECTED.material.emissive.setHex( INTERSECTED.currentHex );
+
+                INTERSECTED = intersects[0].object;
+                console.log('INTERSECTED:', INTERSECTED);
+                INTERSECTED.currentHex = INTERSECTED.material[0].emissive.getHex();
+
+                INTERSECTED.material[0].emissive.setHex( 0x75ddc1 );
+            }
+        } else {
+            // 恢复颜色
+            if (INTERSECTED) {
+                INTERSECTED.material[0].emissive.setHex( INTERSECTED.currentHex );
+            }
+            INTERSECTED = null;
+        }
+
+        render();
+    }
+
+    function onWindowResize() {
+
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+
+        renderer.setSize( window.innerWidth, window.innerHeight );
+
+    }
+
+    function main() {
+
+        init();
+        animate();
+
+    }
+
+    main();
+
+</script>
+</body>
+</html>
