@@ -6,7 +6,7 @@
   "scenes": [
     {
       "nodes": [
-        4
+        5
       ],
       "name": "Scene"
     }
@@ -27,10 +27,18 @@
       },
       "mesh": 1
     },
+	{
+      "name": "OBM_Piles-12",
+      "extras": {
+        "id": "7B5E233C-6288-489E-B200-819EB9F3E3DX"
+      },
+      "mesh": 2
+    },
     {
       "children": [
         0,
-        1
+        1,
+		2
       ]
     },
     {
@@ -54,13 +62,13 @@
       ],
       "name": "lianxugltf",
       "children": [
-        2
+        3
       ]
     },
     {
       "name": "modifiedLianXu.gltf",
       "children": [
-        3
+        4
       ]
     }
   ],
@@ -585,7 +593,7 @@
       "name": "OBM_Piles_1.dgn_Default-RGB(165,97,0)__vis"
     }
   ],
-  "meshes": [
+"meshes": [
     {
       "primitives": [
         {
@@ -771,16 +779,11 @@
           },
           "indices": 23,
           "material": 2
-        },
-        {
-          "mode": 4,
-          "attributes": {
-            "POSITION": 12,
-            "NORMAL": 13
-          },
-          "indices": 24,
-          "material": 2
-        },
+        }
+      ]
+    },
+	{
+      "primitives": [
         {
           "mode": 4,
           "attributes": {
@@ -790,7 +793,7 @@
           "indices": 25,
           "material": 2
         }
-      ]
-    }
+	  ]
+	}
   ]
 }
